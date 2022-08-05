@@ -157,14 +157,14 @@ public class ExtractDataInGAS extends GhidraScript {
 			Class<? extends DataType> typeclass;
 			
 			if(at == null) {
-				val = "0" + String.format("%02X", getByte(last)) + "h";
+				val = String.format("%02X", getByte(last)) + "h";
 				type = new CharDataType();
 				typeclass = type.getClass();
 			}
 			else {
 				type = at.getBaseDataType();
 				typeclass = type.getClass();
-				val = typeclass == PointerDataType.class ? getSymbolAt(((Address)at.getValue())).getName()
+				val = at.isPointer() ? getSymbolAt(((Address)at.getValue())).getName().replaceAll("(?!_[0-9])\\W", "_")
 						: at.getDefaultValueRepresentation();
 			}
 			
@@ -181,12 +181,12 @@ public class ExtractDataInGAS extends GhidraScript {
 			}
 			else if(typeclass == CharDataType.class) {
 				crep = "char " + datname + ";";
-				asmrep = datname + ": .byte " + val;
+				asmrep = datname + ": .byte 0x" + val.substring(0, val.length() - 1);
 				continue;
 			}
-			else if(typeclass == PointerDataType.class) {
+			else if(at.isPointer()) {
 				crep = "void *" + datname + ";";
-				asmrep = datname + ": .word " + val;
+				asmrep = datname + ": .long " + val;
 				continue;
 			}
 			
@@ -196,30 +196,30 @@ public class ExtractDataInGAS extends GhidraScript {
 			switch(type.getLength()) {
 			case 1:
 				crep = cprefix + "char " + datname + ";";
-				asmrep = datname + ": .byte " + val;
+				asmrep = datname + ": .byte 0x" + val.substring(0, val.length() - 1);
 				continue;
 			case 2:
 				crep = cprefix + "short " + datname + ";";
-				asmrep = datname + ": .hword " + val;
+				asmrep = datname + ": .hword 0x" + val.substring(0, val.length() - 1);
 				continue;
 			case 4:
 				if(typeclass != AbstractFloatDataType.class) {
 					crep = cprefix + "int " + datname + ";";
-					asmrep = datname + ": .long " + val;
+					asmrep = datname + ": .long 0x" + val.substring(0, val.length() - 1);
 				}
 				else {
 					crep = cprefix + "float " + datname + ";";
-					asmrep = datname + ": .float " + val;
+					asmrep = datname + ": .float 0x" + val.substring(0, val.length() - 1);
 				}
 				continue;
 			case 8:
 				if(typeclass != AbstractFloatDataType.class) {
 					crep = cprefix + "long long " + datname + ";";
-					asmrep = datname + ": .quad " + val;
+					asmrep = datname + ": .quad 0x" + val.substring(0, val.length() - 1);
 				}
 				else {
 					crep = cprefix + "double " + datname + ";";
-					asmrep = datname + ": .float " + val;
+					asmrep = datname + ": .float 0x" + val.substring(0, val.length() - 1);
 				}
 				continue;
 			}
