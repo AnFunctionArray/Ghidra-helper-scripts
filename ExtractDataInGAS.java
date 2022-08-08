@@ -36,6 +36,7 @@
 import java.awt.event.InputEvent;
 import java.awt.event.KeyEvent;
 import java.io.File;
+import java.io.FileWriter;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -128,18 +129,53 @@ public class ExtractDataInGAS extends GhidraScript {
 		
 		Data at = null;
 		
-		while(beg.getOffset() < memblk.getEnd().getOffset()) {
+		String lastasmrep = "", lastcrep = "";
+		
+		boolean inrepeat = false, hasuninstarted = false;
+		
+		int inrepeatcount = 0;
+		
+		FileWriter crepallf = new FileWriter(dir.getPath() + "/out.c");
+		FileWriter asmrepallf = new FileWriter(dir.getPath() + "/asmrep.s");
+		
+		String alt = "";
+		
+		while(true) {
 			//if(at != null) {
-				if (getSymbolAt(last) != null) {
-					asmrepall += asmrep + "\n";
-					crepall += crep + "\n";
+			if(hasuninstarted) {
+				asmrep = alt;
+			}
+			if (getSymbolAt(last) != null) {
+				asmrep = asmrep;
+			}
+			else {
+				asmrep = asmrep.substring(2);
+			}
+				if(lastasmrep.equals(asmrep)) {
+					if(!inrepeat) {
+						inrepeatcount = 0;
+						inrepeat = true;
+					}
+					++inrepeatcount;
 				}
 				else {
-					asmrepall += asmrep.substring(2) + "\n";
+					if(inrepeat) {
+						asmrepall += ".rept 0x" + Integer.toHexString(inrepeatcount) + "\n";
+						asmrepall += lastasmrep + "\n";
+						asmrepall += ".endr\n";
+						inrepeat = false;
+					}
+					crepall += crep + "\n";
+					asmrepall += asmrep + "\n";
 				}
+			lastasmrep = "" + asmrep;
+			crepallf.append(crepall);
+			asmrepallf.append(asmrepall);
+			asmrepall = "";
+			crepall = "";
+			if(!(beg.getOffset() < 0x003eb000)) break;
 			//}
-			Msg.info(this, asmrep);
-			Msg.info(this, crep);
+			//Msg.info(this, Long.toHexString(beg.getOffset()));
 			at = getDataAt(beg);
 			
 			String datname = getSymbolAt(beg) != null ? getSymbolAt(beg).getName() 
@@ -156,20 +192,44 @@ public class ExtractDataInGAS extends GhidraScript {
 			
 			Class<? extends DataType> typeclass;
 			
-			if(at == null) {
+			type = new CharDataType();
+			typeclass = type.getClass();
+			
+			if(at == null) try {
 				val = String.format("%02X", getByte(last)) + "h";
-				type = new CharDataType();
-				typeclass = type.getClass();
+				hasuninstarted = false;
+			} catch(ghidra.program.model.mem.MemoryAccessException exc) {
+				//if(!hasuninstarted) {
+				//	asmrepall += ".section .bss_real_data, \"b\" ,   @nobits";
+				//}
+				hasuninstarted = true;
+				val = " ";
 			}
 			else {
 				type = at.getBaseDataType();
 				typeclass = type.getClass();
-				val = at.isPointer() ? getSymbolAt(((Address)at.getValue())).getName().replaceAll("(?!_[0-9])\\W", "_")
-						: at.getDefaultValueRepresentation();
+				val = at.isInitializedMemory() ? at.isPointer() ? getSymbolAt(((Address)at.getValue())) != null
+						? getSymbolAt(((Address)at.getValue())).getName().replaceAll("(?!_[0-9])\\W", "_")
+						: "0" + Long.toHexString(((Address)at.getValue()).getOffset()) + "h"
+						: at.getDefaultValueRepresentation() : " ";
+				if(!at.isInitializedMemory()) {
+					//asmrepall += ".section .bss_real_data, \"b\" ,   @nobits";
+					hasuninstarted = true;
+				}
+				else {
+					hasuninstarted = false;
+				}
 			}
 			
-			Msg.info(this, type.getLength());
-			beg = beg.add(typeclass == StringDataType.class ? ((StringDataType)type).getLength(at, -1) : type.getLength());
+			long typelen = typeclass == StringDataType.class ? ((StringDataType)type).getLength(at, -1) : type.getLength();
+			
+			//Msg.info(this, type.getLength());
+			beg = beg.add(typelen);
+			
+			if(hasuninstarted) {
+				alt = datname + ": .skip " + typelen;
+				//continue;
+			}
 
 			
 			if(typeclass == StringDataType.class) {
@@ -228,10 +288,8 @@ public class ExtractDataInGAS extends GhidraScript {
 			break;
 		}
 		
-		
-		
-		Files.writeString(Path.of(dir.getPath() + "/out.c"), crepall);
-		Files.writeString(Path.of(dir.getPath() + "/asmrep.s"), asmrepall);
+		crepallf.close();
+		asmrepallf.close();
 	}
 	
 	private Namespace createUniqueClassName(Namespace rootNamespace) {
